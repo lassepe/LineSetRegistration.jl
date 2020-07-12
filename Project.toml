@@ -1,8 +1,11 @@
 [deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CoordinateTransformations = "150eb455-5306-5404-9cee-2592286d6298"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
+Lazy = "50d2b5c4-7a5e-59d5-8109-a42b560f39c0"
 RCall = "6f49c342-dc21-5d91-9882-a32aef131414"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 Rotations = "6038ab10-8711-5258-84ad-4b1120ba62dc"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+VegaLite = "112f6efa-9a02-5b7d-90c0-432ed331239a"

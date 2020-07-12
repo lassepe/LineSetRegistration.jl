@@ -1,14 +1,7 @@
-module SPLFieldModel
-
+using CoordinateTransformations: LinearMap
 using GeometryBasics: Point, Line
-using CoordinateTransformations: Transformation, LinearMap
-using StaticArrays: SMatrix
 using LinearAlgebra: diagm
-
-include("GeometryTransformations.jl")
-using .GeometryTransformations
-
-export SPLField
+using StaticArrays: SMatrix
 
 struct SPLField{L<:Line}
     lines::Vector{L}
@@ -40,29 +33,22 @@ function SPLField(;
             ),
         ]
 
-        mirror_transform = LinearMap(SMatrix{2,2}(diagm([-1, 1])))
-        mirror ? map(l -> GeometryTransformations.apply(mirror_transform, l), box_lines) :
-        box_lines
+        if mirror
+            mirror_transform = LinearMap(SMatrix{2,2}(diagm([-1, 1])))
+            map(box_lines) do line
+                Line(mirror_transform.(Tuple(line))...)
+            end
+        else
+            box_lines
+        end
     end
 
     SPLField([
         # outer border
-        Line(
-            Point(-field_len_x / 2, -field_len_y / 2),
-            Point(-field_len_x / 2, +field_len_y / 2),
-        ),
-        Line(
-            Point(-field_len_x / 2, +field_len_y / 2),
-            Point(+field_len_x / 2, +field_len_y / 2),
-        ),
-        Line(
-            Point(+field_len_x / 2, +field_len_y / 2),
-            Point(+field_len_x / 2, -field_len_y / 2),
-        ),
-        Line(
-            Point(+field_len_x / 2, -field_len_y / 2),
-            Point(-field_len_x / 2, -field_len_y / 2),
-        ),
+        Line(Point(-field_len_x / 2, -field_len_y / 2), Point(-field_len_x / 2, +field_len_y / 2)),
+        Line(Point(-field_len_x / 2, +field_len_y / 2), Point(+field_len_x / 2, +field_len_y / 2)),
+        Line(Point(+field_len_x / 2, +field_len_y / 2), Point(+field_len_x / 2, -field_len_y / 2)),
+        Line(Point(+field_len_x / 2, -field_len_y / 2), Point(-field_len_x / 2, -field_len_y / 2)),
         # center line
         Line(Point(0.0, +field_len_y / 2), Point(0.0, -field_len_y / 2)),
         # penalty and goal boxes
@@ -73,6 +59,4 @@ function SPLField(;
         # # center circle
         # Circle(Point(0, 0), center_circle_diameter)
     ])
-end
-
 end
