@@ -4,7 +4,7 @@ using GeometryBasics: Point, Line
 using Lazy: @forward
 using LinearAlgebra: diagm, norm
 using RCall
-using StaticArrays: SMatrix, SVector
+using StaticArrays: SMatrix, SVector, SizedVector
 using VegaLite
 using Flux: Flux, ADAM
 using ForwardDiff
@@ -22,7 +22,7 @@ end
 "The known lines on the map."
 spl_field = SPLField()
 "Some perceived lines."
-perceived_lines = [Line(Point(1., -1.), Point(2., -0.9)), Line(Point(1., -1), Point(0.8, 1))]
+perceived_lines = [Line(Point(1., -2.), Point(2., -1.9)), Line(Point(1., -2), Point(0.8, 0.0))]
 
 #======================================= optimization utils =======================================#
 
@@ -93,22 +93,22 @@ end
 
 #====================================== optimization problem ======================================#
 
-function fit_line_transformation(lines, map_lines; n_iterations_max = 5000, optimizer = ADAM())
+function fit_line_transformation(lines, map_lines; n_iterations_max = 100, optimizer = ADAM())
     "Initial guess of parameters we want to fit."
-    transformation_parameters = zeros(3) # Δx, Δy, Δα
+    transformation_parameters = zero(SizedVector{3, Float64})
+    transformation_gradient = similar(transformation_parameters)
+
+    function objective(params)
+        tform = pose_transformation(params)
+        transformed_lines = map(l -> transform(tform, l), lines)
+        line_fit_error(transformed_lines, map_lines)
+    end
 
     for i in 1:n_iterations_max
         # TODO: make a non-allocating version here.
-        transformation_gradient = ForwardDiff.gradient(transformation_parameters) do params
-            transformed_lines = map(l -> transform(pose_transformation(params), l), lines)
-            e = line_fit_error(transformed_lines, map_lines)
-            println(ForwardDiff.value(e))
-            e
-        end
-
+        ForwardDiff.gradient!(transformation_gradient, objective, transformation_parameters)
         # TODO: make a non-allocating version here.
-        step = Flux.Optimise.apply!(optimizer, transformation_parameters, transformation_gradient)
-        transformation_parameters .-= step
+        Flux.update!(optimizer, transformation_parameters, transformation_gradient)
     end
 
     pose_transformation(transformation_parameters)
