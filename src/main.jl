@@ -1,10 +1,9 @@
-using CoordinateTransformations: Transformation, LinearMap
-using DataFrames
+using CoordinateTransformations: Translation, LinearMap
+using DataFrames: DataFrame
 using GeometryBasics: Point, Line
 using Lazy: @forward
 using LinearAlgebra: diagm, norm
 using RCall
-using Rotations
 using StaticArrays: SMatrix, StaticArrays
 using VegaLite
 

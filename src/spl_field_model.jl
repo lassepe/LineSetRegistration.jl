@@ -35,9 +35,7 @@ function SPLField(;
 
         if mirror
             mirror_transform = LinearMap(SMatrix{2,2}(diagm([-1, 1])))
-            map(box_lines) do line
-                Line(mirror_transform.(Tuple(line))...)
-            end
+            map(l -> transform(mirror_transform, l), box_lines)
         else
             box_lines
         end
