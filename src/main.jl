@@ -4,8 +4,11 @@ using GeometryBasics: Point, Line
 using Lazy: @forward
 using LinearAlgebra: diagm, norm
 using RCall
-using StaticArrays: SMatrix, StaticArrays
+using StaticArrays: SMatrix, SVector
 using VegaLite
+using Flux: Flux, ADAM
+using ForwardDiff
+using LinearAlgebra: ⋅
 
 @rlibrary ggplot2
 
@@ -19,22 +22,43 @@ end
 "The known lines on the map."
 spl_field = SPLField()
 "Some perceived lines."
-perceived_lines = [Line(Point(1, 0), Point(2, 0)), Line(Point(2, 0), Point(2, 2))]
+perceived_lines = [Line(Point(1., -1.), Point(2., -0.9)), Line(Point(1., -1), Point(0.8, 1))]
 
 #======================================= optimization utils =======================================#
 
-function line_fit_error(perceived_lines, map_lines)
+function line_fit_error(lines, map_lines)
     # technically, the right thing would be to comupte the sum of all distances between the
-    # `perceived_lines` and the respective closest field `map_lines`. Thus, this would boild down
+    # `lines` and the respective closest field `map_lines`. Thus, this would boild down
     # to the absolute area bewetten the perceived lines and their respective closeset field line.
     #
     # for simplicty, let's just use the distnace of the end-points of the perceived lines to a field
     # line.
 
-    function distance(point::Point, line::Line)
+    function distance_projected(point::Point, line::Line)
         (x0, y0) = point
         (x1, y1), (x2, y2) = p1, p2 = line
         abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1) / norm(p1 - p2)
+    end
+
+    function distance_segment(point::Point, line::Line)
+        p_start, p_end = line
+        line_len = norm(p_end - p_start)
+        line_vector = p_end - p_start
+
+        if line_len ≈ 0
+            return norm(p_start - point)
+        end
+
+        t = ((point - p_start) ⋅ line_vector) / line_len
+
+        closest_point_on_line = if t < 0
+            p_start
+        elseif t > 1
+            p_end
+        else
+            p_start + line_vector .* t
+        end
+        norm(point - closest_point_on_line)
     end
 
     function line_length(line::Line)
@@ -42,16 +66,24 @@ function line_fit_error(perceived_lines, map_lines)
         norm(p1 - p2)
     end
 
-    function line_fit_error(perceived_line::Line, map_line::Line)
-        d1, d2 = distance(perceived_line[1], map_line), distance(perceived_line[2], map_line)
-        line_length(perceived_line) * (d1 + d2) / 2
+    function line_fit_error(line::Line, map_line::Line)
+        d1, d2 = distance_segment(line[1], map_line), distance_segment(line[2], map_line)
+        line_length(line) * (d1 + d2) / 2
     end
 
-    sum(perceived_lines) do perceived_line
-        minimum(map_lines) do field_line
-            line_fit_error(perceived_line, field_line)
+    sum(lines) do line
+        minimum(map_lines) do map_line
+            line_fit_error(line, map_line)
         end
     end
+end
+
+function pose_transformation(transformation_parameters)
+    pose_transformation(
+        transformation_parameters[1],
+        transformation_parameters[2],
+        transformation_parameters[3],
+    )
 end
 
 function pose_transformation(Δx, Δy, Δα)
@@ -59,7 +91,31 @@ function pose_transformation(Δx, Δy, Δα)
     Translation(Δx, Δy) ∘ LinearMap(SMatrix{2,2}(cα, sα, -sα, cα))
 end
 
-transformed_lines = map(l -> transform(pose_transformation(1, 1, pi/4), l), perceived_lines)
+#====================================== optimization problem ======================================#
+
+function fit_line_transformation(lines, map_lines; n_iterations_max = 5000, optimizer = ADAM())
+    "Initial guess of parameters we want to fit."
+    transformation_parameters = zeros(3) # Δx, Δy, Δα
+
+    for i in 1:n_iterations_max
+        # TODO: make a non-allocating version here.
+        transformation_gradient = ForwardDiff.gradient(transformation_parameters) do params
+            transformed_lines = map(l -> transform(pose_transformation(params), l), lines)
+            e = line_fit_error(transformed_lines, map_lines)
+            println(ForwardDiff.value(e))
+            e
+        end
+
+        # TODO: make a non-allocating version here.
+        step = Flux.Optimise.apply!(optimizer, transformation_parameters, transformation_gradient)
+        transformation_parameters .-= step
+    end
+
+    pose_transformation(transformation_parameters)
+end
+
+fitted_line_transformation = fit_line_transformation(perceived_lines, spl_field.lines)
+transformed_lines = map(l -> transform(fitted_line_transformation, l), perceived_lines)
 
 visualize(vcat(
     line_dataframe(spl_field.lines, "map"),
