@@ -11,8 +11,10 @@ function visualize(lines; backend = GGPlotBackend())
 end
 
 function visualize_(::GGPlotBackend, line_data, color_property)
-    ggplot(line_data, aes(x = :x, y = :y, xend = :xend, yend = :yend, color = color_property)) +
-    geom_segment()
+    (
+     ggplot(line_data, aes(x = :x, y = :y, xend = :xend, yend = :yend, color = color_property)) +
+     geom_segment()
+    ) + coord_fixed(ratio = 1)
 end
 
 function visualize_(::VegaBackend, line_data, color_property)
