@@ -200,6 +200,9 @@ function debug_viz()
         geom_segment(data = dynamic_line_data) +
         transition_manual(:i_iter),
         nframes = nrow(dynamic_line_data),
+        width = 1000,
+        height = 500,
+        units = "px"
     )
 end
 

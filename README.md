@@ -2,4 +2,4 @@
 
 Julia experiments for line feature matching.
 
-![](media/out.png)
+![](media/example.gif)
