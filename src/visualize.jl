@@ -12,9 +12,13 @@ end
 
 function visualize_(::GGPlotBackend, line_data, color_property)
     (
-     ggplot(line_data, aes(x = :x, y = :y, xend = :xend, yend = :yend, color = color_property)) +
-     geom_segment()
-    ) + coord_fixed(ratio = 1)
+        ggplot(
+            line_data,
+            aes(x = :x, y = :y, xend = :xend, yend = :yend, color = color_property, group=nothing),
+        ) +
+        geom_segment() +
+        coord_fixed(ratio = 1)
+    )
 end
 
 function visualize_(::VegaBackend, line_data, color_property)
@@ -36,14 +40,21 @@ function line_dataframe(lines::DataFrame)
     lines
 end
 
-function line_dataframe(lines, class = nothing)
+function line_dataframe(lines, class = nothing, i_iter = nothing)
     map(lines) do l
         (x, y), (xend, yend) = l
         line_data = (; x, y, xend, yend)
-        if isnothing(class)
+
+        line_data = if isnothing(class)
             line_data
         else
             merge(line_data, (; class))
+        end
+
+        line_data = if isnothing(i_iter)
+            line_data
+        else
+            merge(line_data, (; i_iter))
         end
     end |> DataFrame
 end

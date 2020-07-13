@@ -1,10 +1,5 @@
-using CoordinateTransformations: LinearMap
-using GeometryBasics: Point, Line
-using LinearAlgebra: diagm
-using StaticArrays: SMatrix
-
-struct SPLField{L<:Line}
-    lines::Vector{L}
+struct SPLField{L<:AbstractVector{<:Line}}
+    lines::L
 end
 
 function SPLField(;
@@ -41,7 +36,7 @@ function SPLField(;
         end
     end
 
-    SPLField([
+    lines = [
         # outer border
         Line(Point(-field_len_x / 2, -field_len_y / 2), Point(-field_len_x / 2, +field_len_y / 2)),
         Line(Point(-field_len_x / 2, +field_len_y / 2), Point(+field_len_x / 2, +field_len_y / 2)),
@@ -56,5 +51,7 @@ function SPLField(;
         boxlines(goalbox_len_x, goalbox_len_y; mirror = true)...,
         # # center circle
         # Circle(Point(0, 0), center_circle_diameter)
-    ])
+    ]
+
+    SPLField(SizedVector{length(lines)}(lines))
 end
