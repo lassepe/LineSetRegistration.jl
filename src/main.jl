@@ -1,14 +1,14 @@
 using CoordinateTransformations: Translation, LinearMap
 using DataFrames: DataFrame, nrow
 using GeometryBasics: Point, Line
-using Lazy: @forward
+using MacroTools: @forward
 using LinearAlgebra: I, diagm, norm, normalize
 using RCall
 using StaticArrays: FieldVector, SMatrix, SVector, SizedVector, SDiagonal
 using VegaLite
 using ForwardDiff
 using LinearAlgebra: ⋅
-using Query
+using Parameters: @with_kw
 
 @rlibrary ggplot2
 @rlibrary gganimate
@@ -91,6 +91,49 @@ function pose_transformation(x, y, α)
     Translation(x, y) ∘ LinearMap(SMatrix{2,2}(cα, sα, -sα, cα))
 end
 
+#=================================== thin optimizer abstraction ===================================#
+
+abstract type FirstOrderOptimizer end
+
+@with_kw struct LevenBergMarquardt{T<:Number} <: FirstOrderOptimizer
+    ρ::T = 10
+    λ₀::T = 1
+end
+
+function initial_state(optimizer::LevenBergMarquardt)
+    optimizer.λ₀
+end
+
+function first_order_step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ)
+    # TODO: introduce line-search for dynamic damping.
+    # levenberg-marquard step
+    M = ∇θ * ∇θ'
+    for i in 1:100
+        θ_candidate = θ - (M + λ * I) \ ∇θ * V
+        V_candidate = Vfunc(θ_candidate)
+        println(V_candidate)
+        println(i)
+        println("=")
+        # if the cost decreased, accept the step candidate
+        if V_candidate < V
+            # accept step candidate
+            return (; step = θ_candidate, λ = λ / optimizer.ρ)
+        end
+        # the step was not accepted, adjust the damping
+        λ *= optimizer.ρ
+    end
+    @assert false "Did not converge."
+end
+
+@with_kw struct Descent{T<:Number} <: FirstOrderOptimizer
+    step_size::T = 0.01
+    step_decay::T = 0.99
+end
+
+function initial_state(optimizer::Descent)
+    optimizer.step_size
+end
+
 #====================================== optimization problem ======================================#
 
 struct PoseTransformation{T} <: FieldVector{3,T}
@@ -117,11 +160,10 @@ function fit_line_transformation(
     lines,
     map_lines;
     n_iterations_max = 50,
-    step_size = 0.03,
-    decay = 0.99,
     snapshot_stepsize = show_debug_animation ? 1 : nothing,
     min_grad_norm = 1e-3,
     min_cost = 0.1,
+    optimizer = LevenBergMarquardt(),
 )
     θ::PoseTransformation{Float64} = zero(PoseTransformation)
     ∇θ::PoseTransformation{Float64} = zero(PoseTransformation)
@@ -134,7 +176,7 @@ function fit_line_transformation(
     # ∘ inv(lines_com_tform)
     debug_snapshots = []
 
-    λ = 1
+    optimizer_state = initial_state(optimizer)
     cost_cache = Inf
 
     function cost(params)
@@ -157,17 +199,7 @@ function fit_line_transformation(
             break
         end
 
-        # levenberg-marquard step
-        s = begin
-            M = ∇θ * ∇θ'
-            Λ = λ * I
-            (M + Λ) \ ∇θ * cost_cache
-        end
-        # gradient step
-        # s = step_size * ∇θ
-
-        θ -= s
-        step_size *= decay
+        θ, optimizer_state = first_order_step(optimizer, cost, cost_cache, θ, ∇θ, optimizer_state)
 
         # take a snapshot every few iterations
         if !isnothing(snapshot_stepsize) && iszero(i % snapshot_stepsize)
