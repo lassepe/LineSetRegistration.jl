@@ -2,9 +2,9 @@ using CoordinateTransformations: Translation, LinearMap
 using DataFrames: DataFrame, nrow
 using GeometryBasics: Point, Line
 using Lazy: @forward
-using LinearAlgebra: diagm, norm, normalize
+using LinearAlgebra: I, diagm, norm, normalize
 using RCall
-using StaticArrays: FieldVector, SMatrix, SVector, SizedVector
+using StaticArrays: FieldVector, SMatrix, SVector, SizedVector, SDiagonal
 using VegaLite
 using ForwardDiff
 using LinearAlgebra: ⋅
@@ -13,7 +13,7 @@ using Query
 @rlibrary ggplot2
 @rlibrary gganimate
 
-const show_debug_animation = false
+show_debug_animation = true
 
 # TODO: dirty fix for "invalid redifition of constant" bug in julia master.
 if !@isdefined INCLUDED
@@ -116,12 +116,12 @@ end
 function fit_line_transformation(
     lines,
     map_lines;
-    n_iterations_max = 1000,
+    n_iterations_max = 50,
     step_size = 0.03,
     decay = 0.99,
     snapshot_stepsize = show_debug_animation ? 1 : nothing,
     min_grad_norm = 1e-3,
-    min_cost = 0.2,
+    min_cost = 0.1,
 )
     θ::PoseTransformation{Float64} = zero(PoseTransformation)
     ∇θ::PoseTransformation{Float64} = zero(PoseTransformation)
@@ -130,13 +130,15 @@ function fit_line_transformation(
     lines_com, lines_mass = center_of_mass(lines)
     lines_com_tform = Translation(lines_com)
     # TODO: this does not really seem to be neccessary
-    normalized_tform(params) = lines_com_tform ∘ pose_transformation(params) ∘ inv(lines_com_tform)
+    # normalized_pose_transformation(params) = lines_com_tform ∘ pose_transformation(params)
+    # ∘ inv(lines_com_tform)
     debug_snapshots = []
 
+    λ = 1
     cost_cache = Inf
 
     function cost(params)
-        tform = normalized_tform(params)
+        tform = pose_transformation(params)
         c = sum(l -> line_fit_error(transform(tform, l), map_lines), lines)
         cost_cache = ForwardDiff.value(c)
         c
@@ -147,25 +149,35 @@ function fit_line_transformation(
     for i in 1:n_iterations_max
         ∇θ = ForwardDiff.gradient(cost, θ)
         ∇θ_norm = norm(∇θ)
-        if cost_cache < lines_mass * min_cost
+        if cost_cache < sqrt(lines_mass) * min_cost
             converged = true
             break
         end
         if ∇θ_norm < min_grad_norm
             break
         end
-        θ -= step_size * ∇θ
+
+        # levenberg-marquard step
+        s = begin
+            M = ∇θ * ∇θ'
+            Λ = λ * I
+            (M + Λ) \ ∇θ * cost_cache
+        end
+        # gradient step
+        # s = step_size * ∇θ
+
+        θ -= s
         step_size *= decay
 
         # take a snapshot every few iterations
         if !isnothing(snapshot_stepsize) && iszero(i % snapshot_stepsize)
-            tform_snapshot = normalized_tform(θ)
+            tform_snapshot = pose_transformation(θ)
             cost_snapshot = cost(θ)
             push!(debug_snapshots, (; i, tform_snapshot, cost_snapshot))
         end
     end
 
-    normalized_tform(θ), converged, debug_snapshots
+    pose_transformation(θ), converged, debug_snapshots
 end
 
 #============================================ test run ============================================#
