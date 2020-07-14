@@ -13,6 +13,8 @@ using Query
 @rlibrary ggplot2
 @rlibrary gganimate
 
+const show_debug_animation = false
+
 # TODO: dirty fix for "invalid redifition of constant" bug in julia master.
 if !@isdefined INCLUDED
     @eval begin
@@ -32,7 +34,7 @@ function distance_segment_sq(point, line)
     p_start, p_end = line
     line_vector = p_end - p_start
     line_len_sq = line_vector ⋅ line_vector
-    @assert line_len_sq > 0
+    @assert line_len_sq > 1e-3
     t = ((point - p_start) ⋅ line_vector) / line_len_sq
 
     closest_point_on_line = if t < 0
@@ -108,16 +110,16 @@ function center_of_mass(lines::AbstractVector{Line{N,T}}) where {N,T}
         new_com = (cum_com * cum_mass + com * mass) / new_cum_mass
         (new_com, new_cum_mass)
     end
-    total_com
+    total_com, total_mass
 end
 
 function fit_line_transformation(
     lines,
     map_lines;
-    n_iterations_max = 50,
+    n_iterations_max = 1000,
     step_size = 0.03,
     decay = 0.99,
-    snapshot_stepsize = 1,
+    snapshot_stepsize = show_debug_animation ? 1 : nothing,
     min_grad_norm = 1e-3,
     min_cost = 0.2,
 )
@@ -125,7 +127,8 @@ function fit_line_transformation(
     ∇θ::PoseTransformation{Float64} = zero(PoseTransformation)
 
     "Normalize transformation to rotate around com of lines."
-    lines_com_tform = Translation(center_of_mass(lines))
+    lines_com, lines_mass = center_of_mass(lines)
+    lines_com_tform = Translation(lines_com)
     # TODO: this does not really seem to be neccessary
     normalized_tform(params) = lines_com_tform ∘ pose_transformation(params) ∘ inv(lines_com_tform)
     debug_snapshots = []
@@ -144,14 +147,14 @@ function fit_line_transformation(
     for i in 1:n_iterations_max
         ∇θ = ForwardDiff.gradient(cost, θ)
         ∇θ_norm = norm(∇θ)
-        if cost_cache < min_cost
+        if cost_cache < lines_mass * min_cost
             converged = true
             break
         end
         if ∇θ_norm < min_grad_norm
             break
         end
-        θ -= step_size * ∇θ #/ ∇θ_norm
+        θ -= step_size * ∇θ
         step_size *= decay
 
         # take a snapshot every few iterations
@@ -202,10 +205,10 @@ function debug_viz()
         nframes = nrow(dynamic_line_data),
         width = 1000,
         height = 500,
-        units = "px"
+        units = "px",
     )
 end
 
-if converged
+if show_debug_animation && converged
     debug_viz()
 end
