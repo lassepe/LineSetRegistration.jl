@@ -5,7 +5,6 @@ using GeometryBasics: Point, Line
 using LinearAlgebra: I, diagm, norm
 using LinearAlgebra: ⋅
 using MacroTools: @forward
-using Parameters: @with_kw
 using RCall
 using Random: Random
 using StaticArrays: FieldVector, SMatrix, SVector, SizedVector, SDiagonal
@@ -103,7 +102,7 @@ abstract type FirstOrderOptimizer end
 function initial_state end
 function first_order_step end
 
-@with_kw struct LevenBergMarquardt <: FirstOrderOptimizer
+Base.@kwdef struct LevenBergMarquardt <: FirstOrderOptimizer
     "The scaling factor for adaptive damping."
     ρ::Float64 = 1.0
     "The initial regularization factor."
@@ -135,7 +134,7 @@ function first_order_step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ
     @assert false "Did not converge. $λ"
 end
 
-@with_kw struct Descent <: FirstOrderOptimizer
+Base.@kwdef struct Descent <: FirstOrderOptimizer
     step_size::Float64 = 0.01
     step_decay::Float64 = 0.99
 end
