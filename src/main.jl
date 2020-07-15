@@ -1,14 +1,15 @@
 using CoordinateTransformations: Translation, LinearMap
 using DataFrames: DataFrame, nrow
+using ForwardDiff
 using GeometryBasics: Point, Line
+using LinearAlgebra: I, diagm, norm
+using LinearAlgebra: ⋅
 using MacroTools: @forward
-using LinearAlgebra: I, diagm, norm, normalize
+using Parameters: @with_kw
 using RCall
+using Random: Random
 using StaticArrays: FieldVector, SMatrix, SVector, SizedVector, SDiagonal
 using VegaLite
-using ForwardDiff
-using LinearAlgebra: ⋅
-using Parameters: @with_kw
 
 @rlibrary ggplot2
 @rlibrary gganimate
@@ -30,19 +31,28 @@ end
 
 #======================================= optimization utils =======================================#
 
+function line_vector_representation(line::Line)
+    p1, p2 = line
+    p2 - p1, p1, p2
+end
+
+function line_length_sq(line::Line)
+    line_vec, _ = line_vector_representation(line)
+    line_vec ⋅ line_vec
+end
+
 function distance_segment_sq(point, line)
-    p_start, p_end = line
-    line_vector = p_end - p_start
-    line_len_sq = line_vector ⋅ line_vector
+    line_vec, p_start, p_end = line_vector_representation(line)
+    line_len_sq = line_vec ⋅ line_vec
     @assert line_len_sq > 1e-3
-    t = ((point - p_start) ⋅ line_vector) / line_len_sq
+    t = ((point - p_start) ⋅ line_vec) / line_len_sq
 
     closest_point_on_line = if t < 0
         p_start
     elseif t > 1
         p_end
     else
-        p_start + line_vector .* t
+        p_start + line_vec .* t
     end
 
     dp = point - closest_point_on_line
@@ -51,12 +61,6 @@ end
 
 function distance_segment(point, line)
     sqrt(distance_segment_sq(point, line))
-end
-
-function line_length_sq(line::Line)
-    p1, p2 = line
-    line_vec = p2 - p1
-    line_vec ⋅ line_vec
 end
 
 "The line fit error of a single `line` - `map_line` pair."
@@ -78,26 +82,32 @@ end
     end
 end
 
-function pose_transformation(transformation_parameters)
+function pose_transformation(transformation_parameters; kwargs...)
     pose_transformation(
         transformation_parameters[1],
         transformation_parameters[2],
-        transformation_parameters[3],
+        transformation_parameters[3];
+        kwargs...,
     )
 end
 
-function pose_transformation(x, y, α)
+function pose_transformation(x, y, α; rot_center = zero(Point{2}))
     sα, cα = sin(α), cos(α)
-    Translation(x, y) ∘ LinearMap(SMatrix{2,2}(cα, sα, -sα, cα))
+    Translation(rot_center) ∘ Translation(x, y) ∘ LinearMap(SMatrix{2,2}(cα, sα, -sα, cα)) ∘
+    inv(Translation(rot_center))
 end
 
 #=================================== thin optimizer abstraction ===================================#
 
 abstract type FirstOrderOptimizer end
+function initial_state end
+function first_order_step end
 
-@with_kw struct LevenBergMarquardt{T<:Number} <: FirstOrderOptimizer
-    ρ::T = 10
-    λ₀::T = 1
+@with_kw struct LevenBergMarquardt <: FirstOrderOptimizer
+    "The scaling factor for adaptive damping."
+    ρ::Float64 = 1.0
+    "The initial regularization factor."
+    λ₀::Float64 = 1.0
 end
 
 function initial_state(optimizer::LevenBergMarquardt)
@@ -122,12 +132,12 @@ function first_order_step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ
         # the step was not accepted, adjust the damping
         λ *= optimizer.ρ
     end
-    @assert false "Did not converge."
+    @assert false "Did not converge. $λ"
 end
 
-@with_kw struct Descent{T<:Number} <: FirstOrderOptimizer
-    step_size::T = 0.01
-    step_decay::T = 0.99
+@with_kw struct Descent <: FirstOrderOptimizer
+    step_size::Float64 = 0.01
+    step_decay::Float64 = 0.99
 end
 
 function initial_state(optimizer::Descent)
@@ -170,17 +180,13 @@ function fit_line_transformation(
 
     "Normalize transformation to rotate around com of lines."
     lines_com, lines_mass = center_of_mass(lines)
-    lines_com_tform = Translation(lines_com)
-    # TODO: this does not really seem to be neccessary
-    # normalized_pose_transformation(params) = lines_com_tform ∘ pose_transformation(params)
-    # ∘ inv(lines_com_tform)
     debug_snapshots = []
 
     optimizer_state = initial_state(optimizer)
     cost_cache = Inf
 
     function cost(params)
-        tform = pose_transformation(params)
+        tform = pose_transformation(params; rot_center = lines_com)
         c = sum(l -> line_fit_error(transform(tform, l), map_lines), lines)
         cost_cache = ForwardDiff.value(c)
         c
@@ -214,14 +220,27 @@ end
 
 #============================================ test run ============================================#
 
+"Artificial noise on lines."
+function noisify(line; max_segments = 3, rng = Random.GLOBAL_RNG, σx=0.01, σy=0.01)
+    n_segments = rand(1:max_segments)
+    line_vec, p1, p2 = line_vector_representation(line)
+    line_segement_thresholds = vcat(0.0, sort(rand(rng, n_segments - 1)), 1.0)
+    rand_translation(rng) = Translation(σx * randn(rng), σy * randn(rng))
+    map(line_segement_thresholds, vcat(line_segement_thresholds[2:end])) do t_start, t_end
+        p_start = rand_translation(rng)(p1 + t_start * line_vec)
+        p_end = rand_translation(rng)(p1 + t_end * line_vec)
+        Line(p_start, p_end)
+    end
+end
+
 "The known lines on the map."
 spl_field = SPLField()
 "Some perceived lines."
-noise_tform = pose_transformation(randn(), randn(), randn())
+noise_tform = pose_transformation(randn(3))
 initial_lines =
-    map([Line(Point(1.0, 1.0), Point(2.0, 1.0)), Line(Point(1.0, -1.0), Point(1.0, 1.0))]) do l
-        l
-    end |> lines -> map(l -> transform(noise_tform, l), lines)
+    map([Line(Point(0.0, 1.0), Point(2.0, 1.0)), Line(Point(1.0, -1.0), Point(1.0, 1.0))]) do l
+        transform(noise_tform, l)
+    end |> lines -> mapreduce(noisify, vcat, lines)
 
 fitted_line_transformation, converged, snapshots =
     @time fit_line_transformation(initial_lines, spl_field.lines)
