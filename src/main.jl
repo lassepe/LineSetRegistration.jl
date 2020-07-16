@@ -2,14 +2,13 @@ using CoordinateTransformations: Translation, LinearMap
 using DataFrames: DataFrame, nrow
 using ForwardDiff
 using GeometryBasics: Point, Line
-using LinearAlgebra: I, diagm, norm
-using LinearAlgebra: ⋅
+using LinearAlgebra: ⋅, I, diagm, norm
 using MacroTools: @forward
-using RCall
-using Random: Random
+using Random: Random, shuffle
 using StaticArrays: FieldVector, SMatrix, SVector, SizedVector, SDiagonal
 using VegaLite
 
+using RCall
 @rlibrary ggplot2
 @rlibrary gganimate
 
@@ -98,13 +97,15 @@ end
 
 #=================================== thin optimizer abstraction ===================================#
 
-abstract type FirstOrderOptimizer end
+abstract type AbstractOptimizer end
 function initial_state end
-function first_order_step end
+function optimizer_step end
 
-Base.@kwdef struct LevenBergMarquardt <: FirstOrderOptimizer
-    "The scaling factor for adaptive damping."
-    ρ::Float64 = 1.0
+Base.@kwdef struct LevenBergMarquardt <: AbstractOptimizer
+    "The up scaling factor for adaptive damping (towards gradient step)"
+    ρ_up::Float64 = 10
+    "The down scaling factor for adaptive damping (towards gauss-newton step)"
+    ρ_down::Float64 = 0.5
     "The initial regularization factor."
     λ₀::Float64 = 1.0
 end
@@ -113,29 +114,33 @@ function initial_state(optimizer::LevenBergMarquardt)
     optimizer.λ₀
 end
 
-function first_order_step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ)
+function optimizer_step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ)
     # TODO: introduce line-search for dynamic damping.
     # levenberg-marquard step
     M = ∇θ * ∇θ'
-    for i in 1:100
+    cost_decreased = false
+    θ_candidate = θ
+    for i in 1:10
         θ_candidate = θ - (M + λ * I) \ ∇θ * V
         V_candidate = Vfunc(θ_candidate)
-        println(V_candidate)
-        println(i)
-        println("=")
-        # if the cost decreased, accept the step candidate
-        if V_candidate < V
+        # if the cost cost_decreased, accept the step candidate
+        if V_candidate < 0.9 * V
             # accept step candidate
-            return (; step = θ_candidate, λ = λ / optimizer.ρ)
+            println("cost decreased: $(V_candidate - V)")
+            cost_decreased = true
+            break
         end
         # the step was not accepted, adjust the damping
-        λ *= optimizer.ρ
+        λ *= optimizer.ρ_up
     end
-    @assert false "Did not converge. $λ"
+    println("lambda: $λ")
+    return (; step = θ_candidate, λ = λ * optimizer.ρ_down, cost_decreased)
 end
 
-Base.@kwdef struct Descent <: FirstOrderOptimizer
+Base.@kwdef struct Descent <: AbstractOptimizer
+    "The initial step size in negative gradient direction."
     step_size::Float64 = 0.01
+    "The exponential decay factor with which the step size is multiplied at each iteration."
     step_decay::Float64 = 0.99
 end
 
@@ -192,36 +197,40 @@ function fit_line_transformation(
     end
 
     converged = false
+    cost_decreased = true
 
     for i in 1:n_iterations_max
+        println("outer_i: $i")
         ∇θ = ForwardDiff.gradient(cost, θ)
         ∇θ_norm = norm(∇θ)
-        if cost_cache < sqrt(lines_mass) * min_cost
+        if cost_cache < min_cost
+            println("$cost_cache")
             converged = true
             break
         end
-        if ∇θ_norm < min_grad_norm
+        if ∇θ_norm < min_grad_norm || !cost_decreased
             break
         end
 
-        θ, optimizer_state = first_order_step(optimizer, cost, cost_cache, θ, ∇θ, optimizer_state)
+        θ, optimizer_state, cost_decreased =
+            optimizer_step(optimizer, cost, cost_cache, θ, ∇θ, optimizer_state)
 
         # take a snapshot every few iterations
         if !isnothing(snapshot_stepsize) && iszero(i % snapshot_stepsize)
-            tform_snapshot = pose_transformation(θ)
+            tform_snapshot = pose_transformation(θ; rot_center = lines_com)
             cost_snapshot = cost(θ)
             push!(debug_snapshots, (; i, tform_snapshot, cost_snapshot))
         end
     end
 
-    pose_transformation(θ), converged, debug_snapshots
+    pose_transformation(θ; rot_center = lines_com), converged, debug_snapshots
 end
 
 #============================================ test run ============================================#
 
 "Artificial noise on lines."
-function noisify(line; max_segments = 3, rng = Random.GLOBAL_RNG, σx=0.01, σy=0.01)
-    n_segments = rand(1:max_segments)
+function noisify(line; max_n_segments = 3, rng = Random.GLOBAL_RNG, σx = 0.01, σy = 0.01)
+    n_segments = rand(1:max_n_segments)
     line_vec, p1, p2 = line_vector_representation(line)
     line_segement_thresholds = vcat(0.0, sort(rand(rng, n_segments - 1)), 1.0)
     rand_translation(rng) = Translation(σx * randn(rng), σy * randn(rng))
@@ -235,30 +244,52 @@ end
 "The known lines on the map."
 spl_field = SPLField()
 "Some perceived lines."
-noise_tform = pose_transformation(randn(3))
-initial_lines =
-    map([Line(Point(0.0, 1.0), Point(2.0, 1.0)), Line(Point(1.0, -1.0), Point(1.0, 1.0))]) do l
-        transform(noise_tform, l)
-    end |> lines -> mapreduce(noisify, vcat, lines)
 
-fitted_line_transformation, converged, snapshots =
-    @time fit_line_transformation(initial_lines, spl_field.lines)
-transformed_lines = map(l -> transform(fitted_line_transformation, l), initial_lines)
-
-@show converged
-
-static_line_data = vcat(
-    line_dataframe(spl_field.lines, "map"),
-    line_dataframe(initial_lines, "initial"),
-    line_dataframe(transformed_lines, "final_transformation"),
+"""
+Sample up to `max_n_lines` from `spl_field.lines` (without replacement) and apply a random
+`rigid_transformation` and a artificial noise to each line.
+"""
+function generate_test_lines(
+    max_n_lines = 10;
+    spl_field = spl_field,
+    rng = Random.GLOBAL_RNG,
+    kwargs...,
 )
-visualize(static_line_data) |> display
+    lines = Iterators.take(shuffle(rng, spl_field.lines), rand(rng, 1:max_n_lines))
+    rigid_transformation = pose_transformation(randn(rng, 3))
+    mapreduce(vcat, lines) do l
+        noisify(transform(rigid_transformation, l); rng, kwargs...)
+    end
+end
 
-function debug_viz()
-    dynamic_line_data = mapreduce(vcat, snapshots) do (i, tform_snapshot)
+function run_test(initial_lines = generate_test_lines())
+    initial_lines = generate_test_lines()
+
+    fitted_line_transformation, converged, debug_snapshots =
+        fit_line_transformation(initial_lines, spl_field.lines)
+    transformed_lines = map(l -> transform(fitted_line_transformation, l), initial_lines)
+
+    converged ? @info("Converged!") : @warn("Not converged!")
+
+    static_line_data = vcat(
+        line_dataframe(spl_field.lines, "map"),
+        line_dataframe(initial_lines, "initial"),
+        line_dataframe(transformed_lines, "final_transformation"),
+    )
+    visualize(static_line_data) |> display
+
+    initial_lines, static_line_data, debug_snapshots
+end
+
+initial_lines, static_line_data, debug_snapshots = run_test()
+
+function debug_viz(static_line_data, debug_snapshots)
+    dynamic_line_data = mapreduce(vcat, debug_snapshots) do (i, tform_snapshot)
         transformed_lines = map(l -> transform(tform_snapshot, l), initial_lines)
         line_dataframe(transformed_lines, "optimization step", i)
     end
+
+    #optimization_debug_data = map(debug_snapshots) do (i)
 
     animate(
         visualize(static_line_data) +
@@ -269,8 +300,4 @@ function debug_viz()
         height = 500,
         units = "px",
     )
-end
-
-if show_debug_animation && converged
-    debug_viz()
 end
