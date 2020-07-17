@@ -124,7 +124,7 @@ function optimizer_step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ)
         θ_candidate = θ - (M + λ * I) \ ∇θ * V
         V_candidate = Vfunc(θ_candidate)
         # if the cost cost_decreased, accept the step candidate
-        if V_candidate < 0.9 * V
+        if V_candidate < 0.99 * V
             # accept step candidate
             println("cost decreased: $(V_candidate - V)")
             cost_decreased = true
@@ -180,20 +180,16 @@ function fit_line_transformation(
     optimizer = LevenBergMarquardt(),
 )
     θ::PoseTransformation{Float64} = zero(PoseTransformation)
-    ∇θ::PoseTransformation{Float64} = zero(PoseTransformation)
-
     "Normalize transformation to rotate around com of lines."
     lines_com, lines_mass = center_of_mass(lines)
     debug_snapshots = []
 
     optimizer_state = initial_state(optimizer)
-    cost_cache = Inf
+    grad_result = DiffResults.GradientResult(θ)
 
     function cost(params)
         tform = pose_transformation(params; rot_center = lines_com)
         c = sum(l -> line_fit_error(transform(tform, l), map_lines), lines)
-        cost_cache = ForwardDiff.value(c)
-        c
     end
 
     converged = false
@@ -201,19 +197,20 @@ function fit_line_transformation(
 
     for i in 1:n_iterations_max
         println("outer_i: $i")
-        ∇θ = ForwardDiff.gradient(cost, θ)
-        ∇θ_norm = norm(∇θ)
-        if cost_cache < min_cost
-            println("$cost_cache")
+        grad_result = ForwardDiff.gradient!(grad_result, cost, θ)
+        ∇θ = DiffResults.gradient(grad_result)
+        V = DiffResults.value(grad_result)
+        println("$grad_result")
+        if V < min_cost
             converged = true
             break
         end
-        if ∇θ_norm < min_grad_norm || !cost_decreased
+        if !cost_decreased
             break
         end
 
         θ, optimizer_state, cost_decreased =
-            optimizer_step(optimizer, cost, cost_cache, θ, ∇θ, optimizer_state)
+            optimizer_step(optimizer, cost, V, θ, ∇θ, optimizer_state)
 
         # take a snapshot every few iterations
         if !isnothing(snapshot_stepsize) && iszero(i % snapshot_stepsize)
@@ -222,6 +219,8 @@ function fit_line_transformation(
             push!(debug_snapshots, (; i, tform_snapshot, cost_snapshot))
         end
     end
+
+    converged ? @info("Converged!") : @warn("Not converged!")
 
     pose_transformation(θ; rot_center = lines_com), converged, debug_snapshots
 end
@@ -262,23 +261,20 @@ function generate_test_lines(
     end
 end
 
-function run_test(initial_lines = generate_test_lines())
-    initial_lines = generate_test_lines()
+function run_test(lines = generate_test_lines())
 
     fitted_line_transformation, converged, debug_snapshots =
-        fit_line_transformation(initial_lines, spl_field.lines)
-    transformed_lines = map(l -> transform(fitted_line_transformation, l), initial_lines)
-
-    converged ? @info("Converged!") : @warn("Not converged!")
+        fit_line_transformation(lines, spl_field.lines)
+    transformed_lines = map(l -> transform(fitted_line_transformation, l), lines)
 
     static_line_data = vcat(
         line_dataframe(spl_field.lines, "map"),
-        line_dataframe(initial_lines, "initial"),
+        line_dataframe(lines, "initial"),
         line_dataframe(transformed_lines, "final_transformation"),
     )
     visualize(static_line_data) |> display
 
-    initial_lines, static_line_data, debug_snapshots
+    lines, static_line_data, debug_snapshots
 end
 
 initial_lines, static_line_data, debug_snapshots = run_test()
@@ -288,8 +284,6 @@ function debug_viz(static_line_data, debug_snapshots)
         transformed_lines = map(l -> transform(tform_snapshot, l), initial_lines)
         line_dataframe(transformed_lines, "optimization step", i)
     end
-
-    #optimization_debug_data = map(debug_snapshots) do (i)
 
     animate(
         visualize(static_line_data) +
