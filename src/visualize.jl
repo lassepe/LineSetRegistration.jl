@@ -58,3 +58,22 @@ function line_dataframe(lines, class = nothing, i_iter = nothing)
         end
     end |> DataFrame
 end
+
+#================================= compose the final optimization =================================#
+
+function debug_viz(static_line_data, debug_snapshots)
+    dynamic_line_data = mapreduce(vcat, debug_snapshots) do (i, tform_snapshot)
+        transformed_lines = map(l -> transform(tform_snapshot, l), initial_lines)
+        line_dataframe(transformed_lines, "optimization step", i)
+    end
+
+    animate(
+        visualize(static_line_data) +
+        geom_segment(data = dynamic_line_data) +
+        transition_manual(:i_iter),
+        nframes = nrow(dynamic_line_data),
+        width = 1000,
+        height = 500,
+        units = "px",
+    )
+end
