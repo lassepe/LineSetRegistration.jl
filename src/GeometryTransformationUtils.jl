@@ -2,8 +2,9 @@ module GeometryTransformationUtils
 
 import CoordinateTransformations: AffineMap, LinearMap
 using CoordinateTransformations: Translation
-
 using GeometryBasics: Point, Line
+using LinearAlgebra: ⋅, norm
+using StaticArrays: FieldVector, SMatrix
 
 # TODO: Is this considered type piracy?
 function (tform::AffineMap)(l::Line)
@@ -12,6 +13,22 @@ end
 
 function (tform::LinearMap)(l::Line)
     Line((tform.(l))...)
+end
+
+struct PoseTransformation{T} <: FieldVector{3,T}
+    x::T
+    y::T
+    α::T
+end
+
+function line_vector(line::Line)
+    p1, p2 = line
+    p2 - p1, p1, p2
+end
+
+function line_length_sq(line::Line)
+    line_vec, _ = line_vector(line)
+    line_vec ⋅ line_vec
 end
 
 function pose_transformation(transformation_parameters; kwargs...)

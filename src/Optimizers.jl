@@ -1,5 +1,7 @@
 module Optimizers
 
+using LinearAlgebra: I
+
 abstract type AbstractOptimizer end
 function initial_state end
 function optimizer_step end
@@ -17,7 +19,7 @@ function initial_state(optimizer::LevenBergMarquardt)
     optimizer.λ₀
 end
 
-function optimizer_step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ)
+function step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ)
     # TODO: introduce line-search for dynamic damping.
     # levenberg-marquard step
     M = ∇θ * ∇θ'

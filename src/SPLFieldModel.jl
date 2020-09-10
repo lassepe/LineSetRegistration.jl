@@ -1,6 +1,12 @@
 module SPLFieldModel
 
-using GeometryBasics: Line
+using CoordinateTransformations: LinearMap
+using GeometryBasics: Point, Line
+using LinearAlgebra: diagm
+using StaticArrays: SMatrix, SizedVector
+
+include("GeometryTransformationUtils.jl")
+using .GeometryTransformationUtils
 
 struct SPLField{L<:AbstractVector{<:Line}}
     lines::L

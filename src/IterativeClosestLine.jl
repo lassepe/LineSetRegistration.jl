@@ -3,24 +3,14 @@ module IterativeClosestLine
 using CoordinateTransformations: CoordinateTransformations, LinearMap
 using ForwardDiff
 using GeometryBasics: Point, Line
-using LinearAlgebra: ⋅, I, diagm, norm
-using StaticArrays: FieldVector, SMatrix, SVector, SizedVector, SDiagonal
+using LinearAlgebra: ⋅, I, norm
 
-struct PoseTransformation{T} <: FieldVector{3,T}
-    x::T
-    y::T
-    α::T
-end
+include("GeometryTransformationUtils.jl")
+using .GeometryTransformationUtils: center_of_mass, PoseTransformation, pose_transformation,
+line_vector, line_length_sq
 
-function line_vector(line::Line)
-    p1, p2 = line
-    p2 - p1, p1, p2
-end
-
-function line_length_sq(line::Line)
-    line_vec, _ = line_vector(line)
-    line_vec ⋅ line_vec
-end
+include("Optimizers.jl")
+import .Optimizers
 
 function distance_segment_sq(point, line)
     line_vec, p_start, p_end = line_vector(line)
@@ -67,10 +57,10 @@ function fit_transformation(
     lines,
     map_lines;
     n_iterations_max = 50,
-    snapshot_stepsize = false,
+    snapshot_stepsize = 1,
     min_grad_norm = 1e-3,
     min_cost = 0.1,
-    optimizer = LevenBergMarquardt(),
+    optimizer = Optimizers.LevenBergMarquardt(),
 )
 
     θ::PoseTransformation{Float64} = zero(PoseTransformation)
@@ -78,7 +68,7 @@ function fit_transformation(
     lines_com, lines_mass = center_of_mass(lines)
     debug_snapshots = []
 
-    optimizer_state = initial_state(optimizer)
+    optimizer_state = Optimizers.initial_state(optimizer)
     grad_result = DiffResults.GradientResult(θ)
 
     function cost(params)
@@ -104,7 +94,7 @@ function fit_transformation(
         end
 
         θ, optimizer_state, cost_decreased =
-            optimizer_step(optimizer, cost, V, θ, ∇θ, optimizer_state)
+            Optimizers.step(optimizer, cost, V, θ, ∇θ, optimizer_state)
 
         # take a snapshot every few iterations
         if !isnothing(snapshot_stepsize) && iszero(i % snapshot_stepsize)
