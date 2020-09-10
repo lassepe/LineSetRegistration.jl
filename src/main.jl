@@ -1,33 +1,36 @@
-using CoordinateTransformations: CoordinateTransformations, Translation, LinearMap
-using DataFrames: DataFrame, nrow
-using ForwardDiff
-using GeometryBasics: Point, Line
-using LinearAlgebra: ⋅, I, diagm, norm
-using MacroTools: @forward
-using Random: Random, shuffle
-using StaticArrays: FieldVector, SMatrix, SVector, SizedVector, SDiagonal
-using VegaLite
 
-using RCall
-@rlibrary ggplot2
-@rlibrary gganimate
+include("SPLFieldModel.jl")
+import .SPLFieldModel
 
-show_debug_animation = true
+include("Visualizer.jl")
+import .Visualizer
 
-# TODO: dirty fix for "invalid redifition of constant" bug in julia master.
-if !@isdefined INCLUDED
-    @eval begin
-        INCLUDED = true
-        include("spl_field_model.jl")
-    end
+include("IterativeClosestLine.jl")
+import .IterativeClosestLine
+
+include("Optimizers.jl")
+import .Optimizers
+
+include("IterativeClosestLine.jl")
+import .IterativeClosestLine
+
+include("TestDataGenerator.jl")
+import .TestDataGenerator
+
+function run_test(lines = generate_test_lines(), spl_field = SPLFieldModel.SPLField())
+
+    fitted_line_tform, converged, debug_snapshots =
+        fit_line_transformation(lines, spl_field.lines)
+    transformed_lines = map(fitted_line_tform, lines)
+
+    static_line_data = vcat(
+        line_dataframe(spl_field.lines, "map"),
+        line_dataframe(lines, "initial"),
+        line_dataframe(transformed_lines, "final_transformation"),
+    )
+    visualize(static_line_data) |> display
+
+    lines, static_line_data, debug_snapshots
 end
 
-include("visualize.jl")
-include("problem_setup.jl")
-include("transformation_utils.jl")
-include("optimizer.jl")
-include("fit_line_transformation.jl")
-include("test_data.jl")
-
-#====================================== optimization problem ======================================#
 initial_lines, static_line_data, debug_snapshots = run_test()

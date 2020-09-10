@@ -1,3 +1,10 @@
+module LineTestDataGenerator
+
+using CoordinateTransformations: Translation
+using Random: shuffle
+include("SPLFieldModel.jl")
+using SPLFieldModel: SPLField
+
 "Artificial noise on lines."
 function noisify(line; max_n_segments = 3, rng = Random.GLOBAL_RNG, σx = 0.01, σy = 0.01)
     n_segments = rand(1:max_n_segments)
@@ -32,19 +39,4 @@ function generate_test_lines(
     end
 end
 
-function run_test(lines = generate_test_lines())
-
-    fitted_line_tform, converged, debug_snapshots =
-        fit_line_transformation(lines, spl_field.lines)
-    transformed_lines = map(fitted_line_tform, lines)
-
-    static_line_data = vcat(
-        line_dataframe(spl_field.lines, "map"),
-        line_dataframe(lines, "initial"),
-        line_dataframe(transformed_lines, "final_transformation"),
-    )
-    visualize(static_line_data) |> display
-
-    lines, static_line_data, debug_snapshots
-end
-
+end # module

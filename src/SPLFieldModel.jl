@@ -1,3 +1,7 @@
+module SPLFieldModel
+
+using GeometryBasics: Line
+
 struct SPLField{L<:AbstractVector{<:Line}}
     lines::L
 end
@@ -55,3 +59,5 @@ function SPLField(;
 
     SPLField(SizedVector{length(lines)}(lines))
 end
+
+end # module

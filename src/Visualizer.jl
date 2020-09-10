@@ -1,3 +1,12 @@
+module Visualizer
+
+using DataFrames: DataFrame, nrow
+using RCall
+@rlibrary ggplot2
+@rlibrary gganimate
+using VegaLite
+
+
 #===================================== visualization backends =====================================#
 #
 abstract type DisplayBackend end
@@ -77,3 +86,4 @@ function debug_viz(static_line_data, debug_snapshots)
         units = "px",
     )
 end
+end # module

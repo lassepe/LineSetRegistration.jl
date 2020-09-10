@@ -1,9 +1,16 @@
+module GeometryTransformationUtils
+
+import CoordinateTransformations: AffineMap, LinearMap
+using CoordinateTransformations: Translation
+
+using GeometryBasics: Point, Line
+
 # TODO: Is this considered type piracy?
-function (tform::CoordinateTransformations.AffineMap)(l::Line)
+function (tform::AffineMap)(l::Line)
     Line((tform.(l))...)
 end
 
-function (tform::CoordinateTransformations.LinearMap)(l::Line)
+function (tform::LinearMap)(l::Line)
     Line((tform.(l))...)
 end
 
@@ -22,12 +29,6 @@ function pose_transformation(x, y, α; rot_center = zero(Point{2}))
     inv(Translation(rot_center))
 end
 
-struct PoseTransformation{T} <: FieldVector{3,T}
-    x::T
-    y::T
-    α::T
-end
-
 function center_of_mass(lines::AbstractVector{Line{N,T}}) where {N,T}
     total_com, total_mass = reduce(lines; init = (zero(Point{N,T}), 0.0)) do (cum_com, cum_mass), l
         p1, p2 = l
@@ -42,3 +43,4 @@ function center_of_mass(lines::AbstractVector{Line{N,T}}) where {N,T}
     total_com, total_mass
 end
 
+end # module

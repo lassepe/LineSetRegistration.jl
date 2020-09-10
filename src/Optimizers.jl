@@ -1,3 +1,5 @@
+module Optimizers
+
 abstract type AbstractOptimizer end
 function initial_state end
 function optimizer_step end
@@ -49,3 +51,4 @@ function initial_state(optimizer::Descent)
     optimizer.step_size
 end
 
+end # module
