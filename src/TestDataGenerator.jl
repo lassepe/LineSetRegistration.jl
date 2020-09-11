@@ -4,11 +4,11 @@ using CoordinateTransformations: Translation
 using GeometryBasics: Line
 using Random: GLOBAL_RNG, shuffle
 
-include("SPLFieldModel.jl")
-import .SPLFieldModel
+# include("SPLFieldModel.jl")
+import ..SPLFieldModel
 
-include("GeometryTransformationUtils.jl")
-using .GeometryTransformationUtils: line_vector, pose_transformation
+# include("GeometryTransformationUtils.jl")
+using ..GeometryTransformationUtils: line_vector, pose_transformation
 
 
 "Artificial noise on lines."

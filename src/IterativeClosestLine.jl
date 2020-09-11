@@ -5,12 +5,12 @@ using ForwardDiff
 using GeometryBasics: Point, Line
 using LinearAlgebra: ⋅, I, norm
 
-include("GeometryTransformationUtils.jl")
-using .GeometryTransformationUtils: center_of_mass, PoseTransformation, pose_transformation,
+# include("GeometryTransformationUtils.jl")
+using ..GeometryTransformationUtils: center_of_mass, PoseTransformation, pose_transformation,
 line_vector, line_length_sq
 
-include("Optimizers.jl")
-import .Optimizers
+# include("Optimizers.jl")
+import ..Optimizers
 
 function distance_segment_sq(point, line)
     line_vec, p_start, p_end = line_vector(line)

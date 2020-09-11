@@ -1,14 +1,16 @@
-include("SPLFieldModel.jl")
-import .SPLFieldModel
+module LineSetRegistration
 
 include("Visualizer.jl")
-import .Visualizer
-
+include("Optimizers.jl")
+include("GeometryTransformationUtils.jl")
+include("SPLFieldModel.jl")
 include("IterativeClosestLine.jl")
-import .IterativeClosestLine
-
 include("TestDataGenerator.jl")
+
+import .IterativeClosestLine
+import .SPLFieldModel
 import .TestDataGenerator
+import .Visualizer
 
 function run_test(lines = TestDataGenerator.generate_lines(), spl_field = SPLFieldModel.SPLField())
 
@@ -26,4 +28,6 @@ function run_test(lines = TestDataGenerator.generate_lines(), spl_field = SPLFie
     lines, static_line_data, debug_snapshots
 end
 
-initial_lines, static_line_data, debug_snapshots = run_test()
+# initial_lines, static_line_data, debug_snapshots = run_test()
+
+end # module

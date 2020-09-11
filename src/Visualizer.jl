@@ -1,49 +1,23 @@
 module Visualizer
 
 using DataFrames: DataFrame, nrow
-using RCall
-@rlibrary ggplot2
-@rlibrary gganimate
 using VegaLite
 
-
-#===================================== visualization backends =====================================#
-#
-abstract type DisplayBackend end
-struct GGPlotBackend <: DisplayBackend end
-struct VegaBackend <: DisplayBackend end
-
-function visualize(lines; backend = GGPlotBackend())
+function visualize(lines)
     line_data = line_dataframe(lines)
     color_property = hasproperty(line_data, :class) ? :class : nothing
-    visualize_(backend, line_data, color_property)
-end
 
-function visualize_(::GGPlotBackend, line_data, color_property)
-    (
-        ggplot(
-            line_data,
-            aes(x = :x, y = :y, xend = :xend, yend = :yend, color = color_property, group=nothing),
-        ) +
-        geom_segment() +
-        coord_fixed(ratio = 1)
-    )
-end
-
-function visualize_(::VegaBackend, line_data, color_property)
     line_data |> @vlplot(
         :rule,
-        width = 900,
-        height = 400,
-        x = :x,
-        y = :y,
+        width = 1000,
+        height = 600,
+        x = {:x, scale = { domain = [-5, 5] }},
+        y = {:y, scale = { domain = [-3, 3] }},
         x2 = :xend,
         y2 = :yend,
         color = color_property
     )
 end
-
-#====================================== input data conversion =====================================#
 
 function line_dataframe(lines::DataFrame)
     lines
@@ -68,8 +42,7 @@ function line_dataframe(lines, class = nothing, i_iter = nothing)
     end |> DataFrame
 end
 
-#================================= compose the final optimization =================================#
-
+# TODO: this won't work in VegaLite.jl
 function debug_viz(static_line_data, debug_snapshots)
     dynamic_line_data = mapreduce(vcat, debug_snapshots) do (i, tform_snapshot)
         transformed_lines = map(l -> transform(tform_snapshot, l), initial_lines)
@@ -86,4 +59,5 @@ function debug_viz(static_line_data, debug_snapshots)
         units = "px",
     )
 end
+
 end # module
