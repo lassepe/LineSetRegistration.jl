@@ -9,8 +9,8 @@ function visualize(lines)
 
     line_data |> @vlplot(
         :rule,
-        width = 1000,
-        height = 600,
+        width = 500,
+        height = 300,
         x = {:x, scale = { domain = [-5, 5] }},
         y = {:y, scale = { domain = [-3, 3] }},
         x2 = :xend,
@@ -40,24 +40,6 @@ function line_dataframe(lines, class = nothing, i_iter = nothing)
             merge(line_data, (; i_iter))
         end
     end |> DataFrame
-end
-
-# TODO: this won't work in VegaLite.jl
-function debug_viz(static_line_data, debug_snapshots)
-    dynamic_line_data = mapreduce(vcat, debug_snapshots) do (i, tform_snapshot)
-        transformed_lines = map(l -> transform(tform_snapshot, l), initial_lines)
-        line_dataframe(transformed_lines, "optimization step", i)
-    end
-
-    animate(
-        visualize(static_line_data) +
-        geom_segment(data = dynamic_line_data) +
-        transition_manual(:i_iter),
-        nframes = nrow(dynamic_line_data),
-        width = 1000,
-        height = 500,
-        units = "px",
-    )
 end
 
 end # module
