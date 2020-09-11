@@ -21,13 +21,13 @@ struct PoseTransformation{T} <: FieldVector{3,T}
     α::T
 end
 
-function line_vector(line::Line)
+function direction_vector(line::Line)
     p1, p2 = line
     p2 - p1, p1, p2
 end
 
-function line_length_sq(line::Line)
-    line_vec, _ = line_vector(line)
+function length_sq(line::Line)
+    line_vec, _ = direction_vector(line)
     line_vec ⋅ line_vec
 end
 

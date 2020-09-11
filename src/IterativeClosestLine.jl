@@ -7,13 +7,13 @@ using LinearAlgebra: ⋅, I, norm
 
 # include("GeometryTransformationUtils.jl")
 using ..GeometryTransformationUtils:
-    center_of_mass, PoseTransformation, pose_transformation, line_vector, line_length_sq
+    center_of_mass, PoseTransformation, pose_transformation, direction_vector, length_sq
 
 # include("Optimizers.jl")
 import ..Optimizers
 
 function distance_segment(point, line; p = 0.2)
-    line_vec, p_start, p_end = line_vector(line)
+    line_vec, p_start, p_end = direction_vector(line)
     line_len_sq = line_vec ⋅ line_vec
     @assert line_len_sq > 1e-3
     t = ((point - p_start) ⋅ line_vec) / line_len_sq
@@ -31,7 +31,7 @@ function distance_segment(point, line; p = 0.2)
 end
 
 "The line fit error of a single `line` - `map_line` pair."
-@inline function line_fit_error(line::Line, map_line::Line; p = 2)
+@inline function line_fit_error(line::Line, map_line::Line, p)
     # technically, the right thing would be to comupte the sum of all distances between the
     # `lines` and the respective closest field `map_lines`. Thus, this would boild down
     # to the absolute area bewetten the perceived lines and their respective closeset field line.
@@ -41,19 +41,19 @@ end
     # TODO: Read about a better error metric here (ICL paper)
     d1 = distance_segment(line[1], map_line; p)
     d2 = distance_segment(line[2], map_line; p)
-
     d1 + d2
 end
 
 "The line fit error if a single line to the entire map of `map_lines`."
-@inline function line_fit_error(line::Line, map_lines::AbstractVector)
-    # TODO: Use a more robust association logic here:
-    #   - only consider maplines that are long enough
-    #   - add the
-    #   - only add robust kernels
-    minimum(map_lines) do map_line
-        line_fit_error(line, map_line)
-    end
+# TODO: Use a more robust association logic here:
+#   - only consider maplines that are long enough
+#   - explictly filter for orientation
+#   - only add robust kernels
+@inline function line_fit_error(line::Line, map_lines::AbstractVector, p)
+    line_len_sq = length_sq(line)
+    map_line_candidates = filter(l -> length_sq(l) > line_len_sq, map_lines)
+    @assert !isempty(map_line_candidates)
+    minimum(ml -> line_fit_error(line, map_line, p), map_line_candidates) * line_len_sq
 end
 
 function fit_transformation(
@@ -64,19 +64,20 @@ function fit_transformation(
     min_grad_norm = 1e-3,
     min_cost = 0.1,
     optimizer = Optimizers.LevenBergMarquardt(),
+    p = 0.2,
 )
 
     θ::PoseTransformation{Float64} = zero(PoseTransformation)
     "Normalize transformation to rotate around com of lines."
-    lines_com, lines_mass = center_of_mass(lines)
+    rot_center, _ = center_of_mass(lines)
     debug_snapshots = []
 
     optimizer_state = Optimizers.initial_state(optimizer)
     grad_result = DiffResults.GradientResult(θ)
 
     function cost(params)
-        tform = pose_transformation(params; rot_center = lines_com)
-        c = sum(l -> line_fit_error(tform(l), map_lines), lines)
+        tform = pose_transformation(params; rot_center)
+        c = sum(l -> line_fit_error(tform(l), map_lines, p), lines)
     end
 
     converged = false
@@ -101,7 +102,7 @@ function fit_transformation(
 
         # take a snapshot every few iterations
         if !isnothing(snapshot_stepsize) && iszero(i % snapshot_stepsize)
-            tform_snapshot = pose_transformation(θ; rot_center = lines_com)
+            tform_snapshot = pose_transformation(θ; rot_center)
             cost_snapshot = cost(θ)
             push!(debug_snapshots, (; i, tform_snapshot, cost_snapshot))
         end
@@ -109,7 +110,7 @@ function fit_transformation(
 
     converged ? @info("Converged!") : @warn("Not converged!")
 
-    pose_transformation(θ; rot_center = lines_com), converged, debug_snapshots
+    pose_transformation(θ; rot_center), converged, debug_snapshots
 end
 
 end # module

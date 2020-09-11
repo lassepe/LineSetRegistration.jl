@@ -8,12 +8,12 @@ using Random: GLOBAL_RNG, shuffle
 import ..SPLFieldModel
 
 # include("GeometryTransformationUtils.jl")
-using ..GeometryTransformationUtils: line_vector, pose_transformation
+using ..GeometryTransformationUtils: direction_vector, pose_transformation
 
 "Artificial noise on lines."
 function noisify(line; max_n_segments = 3, rng = Random.GLOBAL_RNG, σx = 0.01, σy = 0.01)
     n_segments = rand(1:max_n_segments)
-    line_vec, p1, p2 = line_vector(line)
+    line_vec, p1, p2 = direction_vector(line)
     line_segement_thresholds = vcat(0.0, sort(rand(rng, n_segments - 1)), 1.0)
     rand_translation() = Translation(σx * randn(rng), σy * randn(rng))
 
@@ -30,7 +30,7 @@ Sample up to `max_n_lines` from `spl_field.lines` (without replacement) and appl
 """
 function generate_lines(
     n_lines = 2:5,
-    pose_noise = (0.5, 0.5, deg2rad(15)),
+    pose_noise = (1.0, 1.0, deg2rad(15)),
     spl_field = SPLFieldModel.SPLField(),
     rng = GLOBAL_RNG,
     kwargs...,
