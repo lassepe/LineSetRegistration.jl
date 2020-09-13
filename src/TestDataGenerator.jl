@@ -36,7 +36,10 @@ function generate_lines(
     kwargs...,
 )
     lines = Iterators.take(shuffle(rng, spl_field.lines), rand(rng, n_lines))
-    rigid_tform = pose_transformation(2 * (rand(rng, 3) .- 0.5) .* pose_noise)
+    rigid_tform = let
+        x, y, α = 2 * (rand(rng, 3) .- 0.5) .* pose_noise
+        pose_transformation(x, y, α)
+    end
     mapreduce(vcat, lines) do l
         noisify(rigid_tform(l); rng, kwargs...)
     end

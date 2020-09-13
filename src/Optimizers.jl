@@ -32,13 +32,11 @@ function step(optimizer::LevenBergMarquardt, Vfunc, V, θ, ∇θ, λ)
         cost_decreased = V_candidate < 0.99 * V
         if cost_decreased
             # accept step candidate
-            println("cost decreased: $(V_candidate - V)")
             break
         end
         # the step was not accepted, adjust the damping
         λ *= optimizer.ρ_up
     end
-    println("lambda: $λ")
     return (; step = θ_candidate, λ = λ * optimizer.ρ_down, cost_decreased)
 end
 

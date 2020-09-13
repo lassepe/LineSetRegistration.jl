@@ -31,19 +31,10 @@ function length_sq(line::Line)
     line_vec ⋅ line_vec
 end
 
-function pose_transformation(transformation_parameters; kwargs...)
-    pose_transformation(
-        transformation_parameters[1],
-        transformation_parameters[2],
-        transformation_parameters[3];
-        kwargs...,
-    )
-end
-
-function pose_transformation(x, y, α; rot_center = zero(Point{2}))
+function pose_transformation(x, y, α; rotation_center = zero(Point{2}))
     sα, cα = sin(α), cos(α)
-    Translation(rot_center) ∘ Translation(x, y) ∘ LinearMap(SMatrix{2,2}(cα, sα, -sα, cα)) ∘
-    inv(Translation(rot_center))
+    Translation(rotation_center) ∘ Translation(x, y) ∘ LinearMap(SMatrix{2,2}(cα, sα, -sα, cα)) ∘
+    inv(Translation(rotation_center))
 end
 
 function center_of_mass(lines::AbstractVector{Line{N,T}}) where {N,T}
