@@ -50,11 +50,11 @@ end
     observed_line::Line,
     map_lines::AbstractVector{<:Line},
     p;
-    line_filter_tolerance = 1e-3,
+    length_filter_tolerance = 1e-1,
 )
     observed_line_len_sq = length_sq(observed_line)
     map_line_candidates =
-        filter(ml -> (length_sq(ml) + line_filter_tolerance >= observed_line_len_sq), map_lines)
+        filter(ml -> (length_sq(ml) + length_filter_tolerance >= observed_line_len_sq), map_lines)
     @assert !isempty(map_line_candidates)
     minimum(ml -> line_fit_error(observed_line, ml, p), map_line_candidates) *
     sqrt(observed_line_len_sq)
@@ -67,12 +67,12 @@ function fit_transformation(
     min_cost = 0.1,
     p = 1.1,
 )
-    "Normalize transformation to rotate around com of lines."
+    # Normalize transformation to rotate around center of mass
     rotation_center, _ = center_of_mass(observed_lines)
 
     function cost((x, y, α))
         tform = pose_transformation(x, y, α; rotation_center)
-        c = sum(l -> line_fit_error(tform(l), map_lines, p), observed_lines)
+        sum(l -> line_fit_error(tform(l), map_lines, p), observed_lines)
     end
 
     @time res = Optim.optimize(

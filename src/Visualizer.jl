@@ -11,8 +11,8 @@ function visualize(lines)
         :rule,
         width = 500,
         height = 300,
-        x = {:x, scale = { domain = [-5, 5] }},
-        y = {:y, scale = { domain = [-3, 3] }},
+        x = {:x, scale = {domain = [-5, 5]}},
+        y = {:y, scale = {domain = [-3, 3]}},
         x2 = :xend,
         y2 = :yend,
         color = color_property
