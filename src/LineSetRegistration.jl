@@ -1,7 +1,6 @@
 module LineSetRegistration
 
 include("Visualizer.jl")
-include("Optimizers.jl")
 include("GeometryTransformationUtils.jl")
 include("SPLFieldModel.jl")
 include("IterativeClosestLine.jl")
@@ -26,6 +25,8 @@ function run_test(
         Visualizer.line_dataframe(transformed_lines, "final_transformation"),
     )
     Visualizer.visualize(static_line_data) |> display
+
+    observed_lines
 end
 
 end # module

@@ -5,12 +5,10 @@ using ForwardDiff
 using GeometryBasics: Point, Line
 using LinearAlgebra: ⋅, I, norm
 
-# include("GeometryTransformationUtils.jl")
 using ..GeometryTransformationUtils:
     center_of_mass, PoseTransformation, pose_transformation, direction_vector, length_sq
 
-# include("Optimizers.jl")
-import ..Optimizers
+import Optim
 
 function distance_segment(point, line, p)
     line_vec, p_start, p_end = direction_vector(line)
@@ -58,50 +56,36 @@ end
     map_line_candidates =
         filter(ml -> (length_sq(ml) + line_filter_tolerance >= observed_line_len_sq), map_lines)
     @assert !isempty(map_line_candidates)
-    minimum(ml -> line_fit_error(observed_line, ml, p), map_line_candidates) * sqrt(observed_line_len_sq)
+    minimum(ml -> line_fit_error(observed_line, ml, p), map_line_candidates) *
+    sqrt(observed_line_len_sq)
 end
 
 function fit_transformation(
     observed_lines,
     map_lines;
-    n_iterations_max = 50,
     min_grad_norm = 1e-3,
     min_cost = 0.1,
-    optimizer = Optimizers.LevenBergMarquardt(),
     p = 1.1,
 )
-
-    θ::PoseTransformation{Float64} = zero(PoseTransformation)
     "Normalize transformation to rotate around com of lines."
     rotation_center, _ = center_of_mass(observed_lines)
-
-    optimizer_state = Optimizers.initial_state(optimizer)
-    grad_result = DiffResults.GradientResult(θ)
 
     function cost((x, y, α))
         tform = pose_transformation(x, y, α; rotation_center)
         c = sum(l -> line_fit_error(tform(l), map_lines, p), observed_lines)
     end
 
-    converged = false
-    cost_decreased = true
-
-    for i in 1:n_iterations_max
-        grad_result = ForwardDiff.gradient!(grad_result, cost, θ)
-        ∇θ = DiffResults.gradient(grad_result)
-        V = DiffResults.value(grad_result)
-        println(∇θ)
-        if V < min_cost
-            converged = true
-            break
-        end
-        if !cost_decreased
-            break
-        end
-
-        θ, optimizer_state, cost_decreased =
-            Optimizers.step(optimizer, cost, V, θ, ∇θ, optimizer_state)
-    end
+    @time res = Optim.optimize(
+        cost,
+        zeros(3),
+        Optim.LBFGS(),
+        Optim.Options(iterations = 200);
+        autodiff = :forward,
+    )
+    θ = Optim.minimizer(res)
+    @show Optim.iterations(res)
+    @show converged = Optim.converged(res)
+    @show minimum = Optim.minimum(res)
 
     pose_transformation(θ...; rotation_center), converged
 end
